@@ -6,6 +6,8 @@
 [![Stars][stars-shield]][stars-url]
 [![Forks][forks-shield]][forks-url]
 
+[!["Buy Me A Coffee"](https://www.buymeacoffee.com/assets/img/custom_images/orange_img.png)](https://www.buymeacoffee.com/mvscode)
+
 [repo-shield]: https://img.shields.io/badge/GitHub-mvscode%2Ffrps--onekey-brightgreen?style=flat-square&logo=github
 [repo-url]: https://github.com/mvscode/frps-onekey
 [stars-shield]: https://img.shields.io/github/stars/mvscode/frps-onekey.svg?style=flat-square&logo=github&color=yellow
@@ -47,11 +49,48 @@ chmod 700 ./install-frps.sh
 ```
 ### Server management（服务管理器）
 ```Bash
-Usage: /etc/init.d/frps {start|stop|restart|status|config|version}
+Usage: /etc/init.d/frps {start|stop|restart|status|config|info|version}
 ```
- 
+
+### GitHub Actions release sync
+
+- Workflow: `.github/workflows/sync-frp-releases.yml`
+- Purpose: automatically sync the latest `fatedier/frp` release assets into `frp-releases/<tag>/` and publish the same version as a GitHub Release in this repository
+- Triggers: manual `workflow_dispatch` and a daily scheduled run
+
 ## Script ChangeLog
 ---------------------------------------
+
+### [2.0.1] - 2026-08-08
+
+#### Changed
+* Version bump to 2.0.1
+
+### [2.0.0] - 2026-08-04
+
+#### Added
+* Add SSH Tunnel Gateway interactive configuration support.
+
+* Add webServer TLS (Dashboard HTTPS) interactive configuration support, including certificate/key file validation and auto-generation.
+
+#### Fixed
+* Fix frps service failed to start: propagate errors and capture startup logs.
+
+* Fix webServer TLS: validate cert/key files and offer auto-generation when files are missing.
+
+* Fix dashboard URL showing `http://` when TLS is enabled — now correctly shows `https://`.
+
+* Fix download progress: replace curl fake progress bar with wget real-time progress display (speed + percentage).
+
+* Fix `info` command: show `enable`/`disable` label for log file status.
+
+#### Added (2026-07-31)
+* Add `info` command to display frps configuration panel. Usage: `/etc/init.d/frps info`
+
+### [1.0.8] - 2026-07-17
+
+#### Fixed
+* Fix GitHub download URL to fetch frp release assets directly from `fatedier/frp` releases instead of the mirror repository.
 
 ### [1.0.7] - 2024-07-24
 

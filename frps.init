@@ -25,7 +25,7 @@ NAME=frps
 BIN=${ProgramPath}/${NAME}
 CONFIGFILE=${ProgramPath}/frps.toml
 SCRIPTNAME=/etc/init.d/${NAME}
-version="2024"
+version="2026"
 program_version=`${BIN} --version`
 RET_VAL=0
 
@@ -42,7 +42,7 @@ fun_frps()
 
 fun_check_run(){
     PID=`ps -ef | grep -v grep | grep -i "${BIN}" | awk '{print $2}'`
-    if [ ! -z $PID  ]; then
+    if [ ! -z "$PID"  ]; then
         return 0
     else
         return 1
@@ -51,6 +51,17 @@ fun_check_run(){
 fun_load_config(){
     if [ ! -r ${CONFIGFILE} ]; then
         echo "config file ${CONFIGFILE} not found"
+        return 1
+    fi
+    local tls_cert tls_key
+    tls_cert=$(grep -E '^webServer\.tls\.certFile\s*=' "${CONFIGFILE}" | sed 's/.*=\s*"\(.*\)"/\1/' | tr -d ' ')
+    tls_key=$(grep -E '^webServer\.tls\.keyFile\s*=' "${CONFIGFILE}" | sed 's/.*=\s*"\(.*\)"/\1/' | tr -d ' ')
+    if [ -n "${tls_cert}" ] && [ ! -f "${tls_cert}" ]; then
+        echo "webServer TLS certFile not found: ${tls_cert}"
+        return 1
+    fi
+    if [ -n "${tls_key}" ] && [ ! -f "${tls_key}" ]; then
+        echo "webServer TLS keyFile not found: ${tls_key}"
         return 1
     fi
 }
@@ -63,16 +74,23 @@ fun_start()
         echo "${ProgramName} (pid $PID) already running."
         return 0
     fi
-    fun_load_config
+    if ! fun_load_config; then
+        return 1
+    fi
     echo -n "Starting ${ProgramName}(${program_version})..."
-    ${BIN} -c ${CONFIGFILE} >/dev/null 2>&1 &
+    local tmp_log
+    tmp_log=$(mktemp /tmp/frps_start_XXXXXX.log)
+    ${BIN} -c ${CONFIGFILE} >"${tmp_log}" 2>&1 &
     sleep 1
     if ! fun_check_run; then
         echo "start failed"
+        [ -s "${tmp_log}" ] && cat "${tmp_log}"
+        rm -f "${tmp_log}"
         return 1
     fi
+    rm -f "${tmp_log}"
     echo " done"
-    echo "${ProgramName} (pid $PID)is running."
+    echo "${ProgramName} (pid $PID) is running."
     return 0
 }
 
@@ -81,7 +99,7 @@ fun_stop(){
       fun_frps
     fi
     if fun_check_run; then
-        echo -n "Stoping ${ProgramName} (pid $PID)... "
+        echo -n "Stopping ${ProgramName} (pid $PID)... "
         kill $PID
         if [ "$?" != 0 ] ; then
             echo " failed"
@@ -100,7 +118,7 @@ fun_restart(){
 }
 fun_status(){
     PID=`ps -ef | grep -v grep | grep -i "${BIN}" | awk '{print $2}'`
-    if [ ! -z $PID ]; then
+    if [ ! -z "$PID" ]; then
         echo "${ProgramName} (pid $PID) is running..."
     else
         echo "${ProgramName} is stopped"
@@ -135,6 +153,63 @@ fun_config(){
         return 1
     fi
 }
+fun_info(){
+    if [ ! -s ${CONFIGFILE} ]; then
+        echo "${ProgramName} configuration file not found!"
+        return 1
+    fi
+
+    local info_bind_port info_vhost_http info_vhost_https info_dashboard_port
+    local info_dashboard_user info_dashboard_pwd info_token info_subdomain
+    local info_tcp_mux info_max_pool info_log_level info_log_days info_log_to
+    local info_kcp_port info_quic_port
+
+    info_bind_port=$(grep -E '^bindPort\s*=' "${CONFIGFILE}" | awk -F'=' '{print $2}' | tr -d ' ')
+    info_vhost_http=$(grep -E '^vhostHTTPPort\s*=' "${CONFIGFILE}" | awk -F'=' '{print $2}' | tr -d ' ')
+    info_vhost_https=$(grep -E '^vhostHTTPSPort\s*=' "${CONFIGFILE}" | awk -F'=' '{print $2}' | tr -d ' ')
+    info_dashboard_port=$(grep -E '^webServer\.port\s*=' "${CONFIGFILE}" | awk -F'=' '{print $2}' | tr -d ' ')
+    info_dashboard_user=$(grep -E '^webServer\.user\s*=' "${CONFIGFILE}" | awk -F'=' '{print $2}' | tr -d ' "')
+    info_dashboard_pwd=$(grep -E '^webServer\.password\s*=' "${CONFIGFILE}" | awk -F'=' '{print $2}' | tr -d ' "')
+    info_token=$(grep -E '^auth\.token\s*=' "${CONFIGFILE}" | awk -F'=' '{print $2}' | tr -d ' "')
+    info_subdomain=$(grep -E '^subDomainHost\s*=' "${CONFIGFILE}" | awk -F'=' '{print $2}' | tr -d ' "')
+    info_tcp_mux=$(grep -E '^transport\.tcpMux\s*=' "${CONFIGFILE}" | awk -F'=' '{print $2}' | tr -d ' ')
+    info_max_pool=$(grep -E '^transport\.maxPoolCount\s*=' "${CONFIGFILE}" | awk -F'=' '{print $2}' | tr -d ' ')
+    info_log_level=$(grep -E '^log\.level\s*=' "${CONFIGFILE}" | awk -F'=' '{print $2}' | tr -d ' "')
+    info_log_days=$(grep -E '^log\.maxDays\s*=' "${CONFIGFILE}" | awk -F'=' '{print $2}' | tr -d ' ')
+    info_log_to=$(grep -E '^log\.to\s*=' "${CONFIGFILE}" | awk -F'=' '{print $2}' | tr -d ' "')
+    info_kcp_port=$(grep -E '^kcpBindPort\s*=' "${CONFIGFILE}" | awk -F'=' '{print $2}' | tr -d ' ')
+    info_quic_port=$(grep -E '^quicBindPort\s*=' "${CONFIGFILE}" | awk -F'=' '{print $2}' | tr -d ' ')
+
+    local info_ip
+    info_ip=$(curl -s --max-time 5 https://api.ipify.org 2>/dev/null || hostname -I 2>/dev/null | awk '{print $1}')
+
+    fun_frps
+    echo "Congratulations, ${ProgramName} configuration info:"
+    echo "================================================"
+    echo "You Server IP      : ${info_ip}"
+    echo "bind port          : ${info_bind_port}"
+    echo "vhost http port    : ${info_vhost_http}"
+    echo "vhost https port   : ${info_vhost_https}"
+    echo "token              : ${info_token}"
+    echo "subdomain_host     : ${info_subdomain}"
+    echo "tcp mux            : ${info_tcp_mux}"
+    echo "Max Pool count     : ${info_max_pool}"
+    echo "Log level          : ${info_log_level}"
+    echo "Log max days       : ${info_log_days}"
+    echo "Log file           : ${info_log_to:+$([ "${info_log_to}" = "/dev/null" ] && echo disable || echo enable)}"
+    echo "transport protocol : ${info_kcp_port:+enable}${info_kcp_port:-disable}"
+    echo "kcp bind port      : ${info_kcp_port}"
+    echo "quic bind port     : ${info_quic_port}"
+    echo "================================================"
+    echo "${ProgramName} Dashboard     : http://${info_subdomain:-${info_ip}}:${info_dashboard_port}/"
+    echo "Dashboard port     : ${info_dashboard_port}"
+    echo "Dashboard user     : ${info_dashboard_user}"
+    echo "Dashboard password : ${info_dashboard_pwd}"
+    echo "================================================"
+    echo ""
+    echo "${ProgramName} status manage : ${ProgramName} {start|stop|restart|status|config|info|version}"
+    return 0
+}
 fun_version(){
     echo "${ProgramName} version ${program_version}"
     return 0
@@ -145,10 +220,13 @@ fun_help(){
 }
 
 arg1=$1
-[  -z ${arg1} ]
 case "${arg1}" in
     start|stop|restart|status|config)
         fun_${arg1}
+        RET_VAL=$?
+    ;;
+    info|[Ii][Nn][Ff][Oo])
+        fun_info
     ;;
     [vV][eE][rR][sS][iI][oO][nN]|-[vV][eE][rR][sS][iI][oO][nN]|--[vV][eE][rR][sS][iI][oO][nN]|-[vV]|--[vV])
         fun_version
@@ -161,7 +239,7 @@ case "${arg1}" in
     ;;
     *)
         fun_frps
-        echo "Usage: $SCRIPTNAME {start|stop|restart|status|config|version}"
+        echo "Usage: $SCRIPTNAME {start|stop|restart|status|config|info|version}"
         RET_VAL=1
     ;;
 esac
